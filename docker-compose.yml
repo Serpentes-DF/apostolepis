@@ -1,0 +1,52 @@
+name: apostolepis-dev
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    environment:
+      API_ADDRESS: :8080
+      MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-apostolepis}:${MONGO_ROOT_PASSWORD:-apostolepis-dev}@mongodb:27017/?authSource=admin
+      MONGO_DATABASE: ${MONGO_DATABASE:-apostolepis}
+      MONGO_CONNECT_TIMEOUT: ${MONGO_CONNECT_TIMEOUT:-20}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - development
+
+  mongodb:
+    image: mongo:8.2
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-apostolepis}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-apostolepis-dev}
+    volumes:
+      - mongodb-data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 2)'",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - development
+
+networks:
+  development:
+
+volumes:
+  mongodb-data:

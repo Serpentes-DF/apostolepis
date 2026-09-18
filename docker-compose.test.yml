@@ -1,0 +1,51 @@
+name: apostolepis-test
+
+x-test-service: &test-service
+  build:
+    context: .
+    target: build
+  working_dir: /src
+  environment:
+    GOCACHE: /tmp/go-build
+
+services:
+  api-test-unit:
+    <<: *test-service
+    command: ["go", "test", "-tags=unit", "./..."]
+    networks:
+      - testing
+
+  api-test-integration:
+    <<: *test-service
+    command: ["go", "test", "-tags=integration", "-count=1", "./..."]
+    environment:
+      GOCACHE: /tmp/go-build
+      MONGO_URI: mongodb://apostolepis-test:integration-only@test-mongodb:27017/?authSource=admin
+    depends_on:
+      test-mongodb:
+        condition: service_healthy
+    networks:
+      - testing
+
+  test-mongodb:
+    image: mongo:8.2
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: apostolepis-test
+      MONGO_INITDB_ROOT_PASSWORD: integration-only
+    tmpfs:
+      - /data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --username \"$${MONGO_INITDB_ROOT_USERNAME}\" --password \"$${MONGO_INITDB_ROOT_PASSWORD}\" --authenticationDatabase admin --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 2)'",
+        ]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    networks:
+      - testing
+
+networks:
+  testing:
