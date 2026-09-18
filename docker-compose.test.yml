@@ -7,6 +7,9 @@ x-test-service: &test-service
   working_dir: /src
   environment:
     GOCACHE: /tmp/go-build
+    AUTH_TOKEN_SECRET: test-suite-secret
+    AUTH_TOKEN_TTL: "86400"
+    GOOGLE_CLIENT_ID: test-google-client-id.apps.googleusercontent.com
 
 services:
   api-test-unit:
@@ -21,6 +24,9 @@ services:
     environment:
       GOCACHE: /tmp/go-build
       MONGO_URI: mongodb://apostolepis-test:integration-only@test-mongodb:27017/?authSource=admin
+      AUTH_TOKEN_SECRET: integration-test-secret
+      AUTH_TOKEN_TTL: "86400"
+      GOOGLE_CLIENT_ID: test-google-client-id.apps.googleusercontent.com
     depends_on:
       test-mongodb:
         condition: service_healthy

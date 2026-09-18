@@ -10,8 +10,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Serpentes-DF/apostolepis/internal/auth"
 	"github.com/Serpentes-DF/apostolepis/internal/config"
-	"github.com/Serpentes-DF/apostolepis/internal/httpapi"
+	httpapi "github.com/Serpentes-DF/apostolepis/internal/httpapi"
 	"github.com/Serpentes-DF/apostolepis/internal/inventory"
 	platformmongo "github.com/Serpentes-DF/apostolepis/internal/platform/mongodb"
 	"github.com/Serpentes-DF/apostolepis/internal/products"
@@ -50,12 +51,22 @@ func run() error {
 	if err := userRepository.EnsureIndexes(connectContext); err != nil {
 		return err
 	}
+	authTokens, err := auth.NewTokenService(configuration.AuthTokenSecret, configuration.AuthTokenTTL)
+	if err != nil {
+		return err
+	}
+	googleIdentityTokens, err := auth.NewGoogleIdentityTokenValidator(configuration.GoogleClientID)
+	if err != nil {
+		return err
+	}
 
 	router := httpapi.NewRouter(httpapi.Dependencies{
-		Products:  products.NewService(productRepository),
-		Inventory: inventory.NewService(inventoryRepository, productRepository),
-		Users:     users.NewService(userRepository),
-		Ping:      func(ctx context.Context) error { return client.Ping(ctx, nil) },
+		Products:     products.NewService(productRepository),
+		Inventory:    inventory.NewService(inventoryRepository, productRepository),
+		Users:        users.NewService(userRepository),
+		Tokens:       authTokens,
+		GoogleTokens: googleIdentityTokens,
+		Ping:         func(ctx context.Context) error { return client.Ping(ctx, nil) },
 	})
 	server := &http.Server{Addr: configuration.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	serverErrors := make(chan error, 1)

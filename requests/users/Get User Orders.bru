@@ -1,0 +1,19 @@
+meta {
+  name: Get User Orders
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/v1/users/:id/orders
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{token}}
+}
+
+params:path {
+  id: {{userId}}
+}

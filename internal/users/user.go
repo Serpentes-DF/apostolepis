@@ -17,11 +17,12 @@ var (
 )
 
 type User struct {
-	ID        bson.ObjectID `bson:"_id,omitempty" json:"id"`
-	Name      string        `bson:"name" json:"name"`
-	Email     string        `bson:"email" json:"email"`
-	IsAdmin   bool          `bson:"is_admin" json:"is_admin"`
-	CreatedAt time.Time     `bson:"created_at" json:"created_at"`
+	ID        bson.ObjectID   `bson:"_id,omitempty" json:"id"`
+	Name      string          `bson:"name" json:"name"`
+	Email     string          `bson:"email" json:"email"`
+	Orders    []bson.ObjectID `bson:"orders" json:"orders"`
+	IsAdmin   bool            `bson:"is_admin" json:"is_admin"`
+	CreatedAt time.Time       `bson:"created_at" json:"created_at"`
 }
 
 type CreateInput struct {

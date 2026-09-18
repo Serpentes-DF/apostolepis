@@ -40,13 +40,19 @@ func TestUserRepositoryPersistenceAndUniqueEmail(t *testing.T) {
 	if err := repository.EnsureIndexes(ctx); err != nil {
 		t.Fatal(err)
 	}
-	user := User{Name: "Ada", Email: "ada@example.com", IsAdmin: true, CreatedAt: time.Now().UTC()}
+	user := User{
+		Name:      "Ada",
+		Email:     "ada@example.com",
+		Orders:    []bson.ObjectID{bson.NewObjectID(), bson.NewObjectID()},
+		IsAdmin:   true,
+		CreatedAt: time.Now().UTC(),
+	}
 	created, err := repository.Create(ctx, user)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 	loaded, err := repository.Get(ctx, created.ID)
-	if err != nil || loaded.Email != user.Email || !loaded.IsAdmin {
+	if err != nil || loaded.Email != user.Email || !loaded.IsAdmin || len(loaded.Orders) != len(user.Orders) {
 		t.Fatalf("Get() = %#v, %v", loaded, err)
 	}
 	byEmail, err := repository.GetByEmail(ctx, created.Email)

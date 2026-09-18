@@ -1,6 +1,6 @@
 //go:build integration
 
-package httpapi
+package http
 
 import (
 	"bytes"
@@ -12,12 +12,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Serpentes-DF/apostolepis/internal/auth"
 	"github.com/Serpentes-DF/apostolepis/internal/inventory"
 	platformmongo "github.com/Serpentes-DF/apostolepis/internal/platform/mongodb"
 	"github.com/Serpentes-DF/apostolepis/internal/products"
 	"github.com/Serpentes-DF/apostolepis/internal/users"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
+
+type fakeGoogleTokensIntegration struct{}
+
+func (fakeGoogleTokensIntegration) Validate(context.Context, string) (users.User, error) {
+	return users.User{Email: "ada@example.com"}, nil
+}
 
 func TestProductInventoryAndUserHTTPFlow(t *testing.T) {
 	uri := os.Getenv("MONGO_URI")
@@ -45,22 +52,39 @@ func TestProductInventoryAndUserHTTPFlow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	tokens, err := auth.NewTokenService("integration-secret", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
 	router := NewRouter(Dependencies{
-		Products:  products.NewService(productRepository),
-		Inventory: inventory.NewService(inventoryRepository, productRepository),
-		Users:     users.NewService(userRepository),
-		Ping:      func(ctx context.Context) error { return client.Ping(ctx, nil) },
+		Products:     products.NewService(productRepository),
+		Inventory:    inventory.NewService(inventoryRepository, productRepository),
+		Users:        users.NewService(userRepository),
+		Tokens:       tokens,
+		GoogleTokens: fakeGoogleTokensIntegration{},
+		Ping:         func(ctx context.Context) error { return client.Ping(ctx, nil) },
 	})
 
 	if _, err := userRepository.Create(ctx, users.User{
 		Name:      "Ada",
 		Email:     "ada@example.com",
+		Orders:    []bson.ObjectID{},
 		IsAdmin:   true,
 		CreatedAt: time.Now().UTC(),
 	}); err != nil {
 		t.Fatalf("seed admin user: %v", err)
 	}
-	productResponse := performJSON(router, http.MethodPost, "/api/v1/products", `{"name":"Guide","sku":"G-1","price":10}`, map[string]string{"X-User-Email": "ada@example.com"})
+	loginResponse := performJSON(router, http.MethodPost, "/v1/auth/login", `{"identity_token":"google-identity-token"}`, nil)
+	if loginResponse.Code != http.StatusOK {
+		t.Fatalf("login status = %d, body = %s", loginResponse.Code, loginResponse.Body.String())
+	}
+	var session struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(loginResponse.Body.Bytes(), &session); err != nil {
+		t.Fatalf("decode login: %v", err)
+	}
+	productResponse := performJSON(router, http.MethodPost, "/v1/products", `{"name":"Guide","sku":"G-1","price":10}`, map[string]string{"Authorization": "Bearer " + session.Token})
 	if productResponse.Code != http.StatusCreated {
 		t.Fatalf("create product status = %d, body = %s", productResponse.Code, productResponse.Body.String())
 	}
@@ -68,7 +92,7 @@ func TestProductInventoryAndUserHTTPFlow(t *testing.T) {
 	if err := json.Unmarshal(productResponse.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode product: %v", err)
 	}
-	stockResponse := performJSON(router, http.MethodPost, "/api/v1/products/"+created.ID.Hex()+"/stock-adjustments", `{"delta":5}`, map[string]string{"X-User-Email": "ada@example.com"})
+	stockResponse := performJSON(router, http.MethodPost, "/v1/products/"+created.ID.Hex()+"/stock-adjustments", `{"delta":5}`, map[string]string{"Authorization": "Bearer " + session.Token})
 	if stockResponse.Code != http.StatusOK {
 		t.Fatalf("adjust stock status = %d, body = %s", stockResponse.Code, stockResponse.Body.String())
 	}

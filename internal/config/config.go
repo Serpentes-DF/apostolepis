@@ -4,20 +4,25 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
 const (
 	defaultAddress        = ":8080"
-	defaultDatabase       = "apostolepis"
-	defaultConnectTimeout = 10 * time.Second
+	databaseName          = "apostolepis"
+	defaultConnectTimeout = 20 * time.Second
+	defaultTokenTTL       = 24 * time.Hour
 )
 
 type Config struct {
-	Address        string
-	MongoURI       string
-	MongoDatabase  string
-	ConnectTimeout time.Duration
+	Address         string
+	MongoURI        string
+	MongoDatabase   string
+	ConnectTimeout  time.Duration
+	AuthTokenSecret string
+	AuthTokenTTL    time.Duration
+	GoogleClientID  string
 }
 
 func Load() (Config, error) {
@@ -25,26 +30,44 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	tokenTTL, err := durationFromEnv("AUTH_TOKEN_TTL", defaultTokenTTL)
+	if err != nil {
+		return Config{}, err
+	}
 
 	config := Config{
-		Address:        valueOrDefault("API_ADDRESS", defaultAddress),
-		MongoURI:       os.Getenv("MONGO_URI"),
-		MongoDatabase:  valueOrDefault("MONGO_DATABASE", defaultDatabase),
-		ConnectTimeout: timeout,
+		Address:         resolveAddress(),
+		MongoURI:        os.Getenv("MONGO_URI"),
+		MongoDatabase:   databaseName,
+		ConnectTimeout:  timeout,
+		AuthTokenSecret: strings.TrimSpace(os.Getenv("AUTH_TOKEN_SECRET")),
+		AuthTokenTTL:    tokenTTL,
+		GoogleClientID:  strings.TrimSpace(os.Getenv("GOOGLE_CLIENT_ID")),
 	}
 
 	if config.MongoURI == "" {
 		return Config{}, fmt.Errorf("MONGO_URI is required")
 	}
+	if config.AuthTokenSecret == "" {
+		return Config{}, fmt.Errorf("AUTH_TOKEN_SECRET is required")
+	}
+	if config.GoogleClientID == "" {
+		return Config{}, fmt.Errorf("GOOGLE_CLIENT_ID is required")
+	}
 
 	return config, nil
 }
 
-func valueOrDefault(key, fallback string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
+func resolveAddress() string {
+	if address := os.Getenv("API_ADDRESS"); address != "" {
+		return address
 	}
-	return fallback
+
+	if port := strings.TrimSpace(os.Getenv("PORT")); port != "" {
+		return ":" + port
+	}
+
+	return defaultAddress
 }
 
 func durationFromEnv(key string, fallback time.Duration) (time.Duration, error) {

@@ -36,6 +36,9 @@ func TestCreateUser(t *testing.T) {
 	if user.Name != "Ada" || user.Email != "ada@example.com" || !user.IsAdmin {
 		t.Fatalf("Create() user = %#v, want normalized values", user)
 	}
+	if user.Orders == nil || len(user.Orders) != 0 {
+		t.Fatalf("Create() orders = %#v, want an empty orders array", user.Orders)
+	}
 }
 
 func TestCreateUserRejectsInvalidInput(t *testing.T) {

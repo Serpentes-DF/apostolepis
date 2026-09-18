@@ -1,0 +1,15 @@
+meta {
+  name: Get Stock
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/v1/products/:id/stock
+  body: none
+  auth: none
+}
+
+params:path {
+  id: {{productId}}
+}

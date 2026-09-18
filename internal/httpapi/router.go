@@ -1,10 +1,11 @@
-package httpapi
+package http
 
 import (
 	"context"
 	"errors"
 	"net/http"
 
+	"github.com/Serpentes-DF/apostolepis/internal/auth"
 	"github.com/Serpentes-DF/apostolepis/internal/inventory"
 	"github.com/Serpentes-DF/apostolepis/internal/products"
 	"github.com/Serpentes-DF/apostolepis/internal/users"
@@ -32,14 +33,27 @@ type UserService interface {
 	List(context.Context) ([]users.User, error)
 }
 
+type TokenService interface {
+	Issue(bson.ObjectID, string) (string, error)
+	Parse(string) (auth.Identity, error)
+}
+
+type GoogleIdentityTokenValidator interface {
+	Validate(context.Context, string) (users.User, error)
+}
+
 type Dependencies struct {
-	Products  ProductService
-	Inventory InventoryService
-	Users     UserService
-	Ping      func(context.Context) error
+	Products     ProductService
+	Inventory    InventoryService
+	Users        UserService
+	Tokens       TokenService
+	GoogleTokens GoogleIdentityTokenValidator
+	Ping         func(context.Context) error
 }
 
 type handler struct{ dependencies Dependencies }
+
+const authenticatedUserKey = "authenticatedUser"
 
 func NewRouter(dependencies Dependencies) *gin.Engine {
 	router := gin.New()
@@ -47,7 +61,10 @@ func NewRouter(dependencies Dependencies) *gin.Engine {
 	handler := handler{dependencies: dependencies}
 
 	router.GET("/health", handler.health)
-	api := router.Group("/api/v1")
+	router.GET("/docs", serveDocs)
+	router.GET("/docs/*path", serveDocs)
+	api := router.Group("/v1")
+	api.POST("/auth/login", handler.login)
 	adminProducts := api.Group("/products")
 	adminProducts.Use(handler.requireAdmin())
 	adminProducts.POST("", handler.createProduct)
@@ -59,6 +76,7 @@ func NewRouter(dependencies Dependencies) *gin.Engine {
 	api.GET("/products/:id/stock", handler.getStock)
 	api.GET("/users", handler.listUsers)
 	api.GET("/users/:id", handler.getUser)
+	api.GET("/users/:id/orders", handler.requireAuthenticatedUser(), handler.requireSameUserOrAdmin(), handler.getUserOrders)
 
 	return router
 }
@@ -106,19 +124,86 @@ func writeError(c *gin.Context, err error) {
 	c.JSON(status, gin.H{"error": message})
 }
 
-func (handler handler) requireAdmin() gin.HandlerFunc {
+func (handler handler) authenticateUser(c *gin.Context) (users.User, bool) {
+	token, err := auth.BearerToken(c.GetHeader("Authorization"))
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing or invalid Authorization header"})
+		return users.User{}, false
+	}
+	identity, err := handler.dependencies.Tokens.Parse(token)
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+		return users.User{}, false
+	}
+	user, err := handler.dependencies.Users.Get(c.Request.Context(), identity.UserID)
+	if err != nil {
+		if errors.Is(err, users.ErrNotFound) {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid user credentials"})
+			return users.User{}, false
+		}
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return users.User{}, false
+	}
+	if user.Email != identity.Email {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid user credentials"})
+		return users.User{}, false
+	}
+	return user, true
+}
+
+func (handler handler) requireAuthenticatedUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		email := c.GetHeader("X-User-Email")
-		if email == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing X-User-Email header"})
+		user, ok := handler.authenticateUser(c)
+		if !ok {
 			return
 		}
-		user, err := handler.dependencies.Users.GetByEmail(c.Request.Context(), email)
+		c.Set(authenticatedUserKey, user)
+		c.Next()
+	}
+}
+
+func (handler handler) requireSameUserOrAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, err := bson.ObjectIDFromHex(c.Param("id"))
 		if err != nil {
-			if errors.Is(err, users.ErrNotFound) {
-				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "administrator privileges required"})
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "invalid object ID"})
+			return
+		}
+		authenticated, ok := c.Get(authenticatedUserKey)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return
+		}
+		user, ok := authenticated.(users.User)
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return
+		}
+		if !user.IsAdmin && user.ID != id {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "user access denied"})
+			return
+		}
+		c.Next()
+	}
+}
+
+func (handler handler) requireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authenticated, ok := c.Get(authenticatedUserKey)
+		if !ok {
+			user, authenticatedOK := handler.authenticateUser(c)
+			if !authenticatedOK {
 				return
 			}
+			authenticated = user
+			ok = true
+		}
+		if !ok {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+			return
+		}
+		user, ok := authenticated.(users.User)
+		if !ok {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 			return
 		}

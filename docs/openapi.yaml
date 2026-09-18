@@ -1,0 +1,556 @@
+openapi: 3.0.3
+info:
+  title: Apostolepis API
+  version: 1.0.0
+  description: API para produtos, estoque e usuarios.
+servers:
+  - url: /
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+      description: Token assinado retornado pelo endpoint de login.
+  parameters:
+    ObjectID:
+      name: id
+      in: path
+      required: true
+      description: MongoDB ObjectID em hexadecimal.
+      schema:
+        type: string
+        pattern: "^[a-fA-F0-9]{24}$"
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    LoginInput:
+      type: object
+      required: [identity_token]
+      properties:
+        identity_token:
+          type: string
+          description: Google Identity Token emitido para o cliente configurado.
+    LoginResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+    Product:
+      type: object
+      required: [id, name, sku, price, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProductInput:
+      type: object
+      required: [name, sku, price]
+      properties:
+        name:
+          type: string
+        sku:
+          type: string
+        price:
+          type: number
+          format: double
+    Inventory:
+      type: object
+      required: [id, product_id, quantity, updated_at]
+      properties:
+        id:
+          type: string
+        product_id:
+          type: string
+        quantity:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
+    StockAdjustment:
+      type: object
+      required: [delta]
+      properties:
+        delta:
+          type: integer
+          format: int64
+          description: Valor assinado para ajuste do estoque. Nao pode ser zero.
+    User:
+      type: object
+      required: [id, name, email, orders, is_admin, created_at]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        orders:
+          type: array
+          items:
+            type: string
+        is_admin:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    UserOrders:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            type: string
+paths:
+  /health:
+    get:
+      summary: Verifica a saude da API e do MongoDB.
+      responses:
+        "200":
+          description: API saudavel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: Dependencia indisponivel.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /v1/auth/login:
+    post:
+      summary: Valida um Google Identity Token, cria o usuario se necessario e retorna um token da API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Token emitido com sucesso para um usuario existente ou recem-criado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "400":
+          description: JSON invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Token Google invalido ou usuario nao autorizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/products:
+    get:
+      summary: Lista produtos.
+      responses:
+        "200":
+          description: Lista de produtos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      summary: Cria um produto.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "201":
+          description: Produto criado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          description: JSON invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Token ausente, invalido ou expirado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Usuario sem privilegio administrativo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: SKU duplicado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Dados de produto invalidos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/products/{id}:
+    get:
+      summary: Busca um produto por ID.
+      parameters:
+        - $ref: "#/components/parameters/ObjectID"
+      responses:
+        "200":
+          description: Produto encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          description: ObjectID invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Produto nao encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      summary: Atualiza um produto.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        "200":
+          description: Produto atualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "400":
+          description: ObjectID ou JSON invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Token ausente, invalido ou expirado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Usuario sem privilegio administrativo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Produto nao encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: SKU duplicado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Dados de produto invalidos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Remove um produto.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectID"
+      responses:
+        "204":
+          description: Produto removido.
+        "400":
+          description: ObjectID invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Token ausente, invalido ou expirado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Usuario sem privilegio administrativo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Produto nao encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/products/{id}/stock-adjustments:
+    post:
+      summary: Aplica um ajuste de estoque.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockAdjustment"
+      responses:
+        "200":
+          description: Estoque atualizado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inventory"
+        "400":
+          description: ObjectID ou JSON invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Token ausente, invalido ou expirado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Usuario sem privilegio administrativo.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Produto ou estoque nao encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Delta invalido ou estoque insuficiente.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/products/{id}/stock:
+    get:
+      summary: Consulta o estoque atual de um produto.
+      parameters:
+        - $ref: "#/components/parameters/ObjectID"
+      responses:
+        "200":
+          description: Estoque atual.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inventory"
+        "400":
+          description: ObjectID invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Estoque nao encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/users:
+    get:
+      summary: Lista usuarios.
+      responses:
+        "200":
+          description: Lista de usuarios.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/users/{id}:
+    get:
+      summary: Busca um usuario por ID.
+      parameters:
+        - $ref: "#/components/parameters/ObjectID"
+      responses:
+        "200":
+          description: Usuario encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          description: ObjectID invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Usuario nao encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/users/{id}/orders:
+    get:
+      summary: Lista os pedidos de um usuario por ID.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ObjectID"
+      responses:
+        "200":
+          description: Pedidos do usuario.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserOrders"
+        "400":
+          description: ObjectID invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Cabecalho ausente ou usuario autenticado invalido.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Usuario autenticado nao pode acessar os pedidos desse usuario.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Usuario nao encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Erro interno.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"

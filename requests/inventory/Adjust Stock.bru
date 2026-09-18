@@ -1,0 +1,26 @@
+meta {
+  name: Adjust Stock
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/v1/products/:id/stock-adjustments
+  body: json
+  auth: none
+}
+
+params:path {
+  id: {{productId}}
+}
+
+headers {
+  content-type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body {
+  {
+    delta: 5
+  }
+}

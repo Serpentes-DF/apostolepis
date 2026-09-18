@@ -1,0 +1,21 @@
+meta {
+  name: Login
+  type: http
+  seq: 0
+}
+
+post {
+  url: {{baseUrl}}/v1/auth/login
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body {
+  {
+    identity_token: {{googleIdentityToken}}
+  }
+}

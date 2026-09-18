@@ -1,0 +1,28 @@
+meta {
+  name: Update Product
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/v1/products/:id
+  body: json
+  auth: none
+}
+
+params:path {
+  id: {{productId}}
+}
+
+headers {
+  content-type: application/json
+  Authorization: Bearer {{token}}
+}
+
+body {
+  {
+    name: Field Guide Revised
+    sku: FG-1
+    price: 30
+  }
+}

@@ -10,6 +10,9 @@ services:
       MONGO_URI: mongodb://${MONGO_ROOT_USERNAME:-apostolepis}:${MONGO_ROOT_PASSWORD:-apostolepis-dev}@mongodb:27017/?authSource=admin
       MONGO_DATABASE: ${MONGO_DATABASE:-apostolepis}
       MONGO_CONNECT_TIMEOUT: ${MONGO_CONNECT_TIMEOUT:-20}
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:-apostolepis-dev-secret}
+      AUTH_TOKEN_TTL: ${AUTH_TOKEN_TTL:-86400}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-dev-google-client-id.apps.googleusercontent.com}
     depends_on:
       mongodb:
         condition: service_healthy
